@@ -1,0 +1,6 @@
+node_modules/
+.env
+uploads/repairs/*
+uploads/products/*
+!uploads/repairs/.gitkeep
+!uploads/products/.gitkeep
