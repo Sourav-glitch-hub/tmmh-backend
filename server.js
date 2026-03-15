@@ -8,11 +8,11 @@ const cors = require("cors");
 const morgan = require("morgan");
 const path = require("path");
 const dotenv = require("dotenv");
-// const dns = require("dns");
+const dns = require("dns");
 //  // Use Google and Cloudflare DNS for better reliability
 
-//  // Change DNS
-// dns.setServers(["1.1.1.1", "8.8.8.8"]);
+ // Change DNS
+dns.setServers(["1.1.1.1", "8.8.8.8"]);
 
 // ── Load environment variables FIRST ────────────────────────────────────────
 dotenv.config();
