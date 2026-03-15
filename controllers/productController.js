@@ -48,8 +48,11 @@ const createProduct = async (req, res, next) => {
 
     const { name, category, description, available } = req.body;
 
+    // In production: Cloudinary URL, in development: local path
     const imagePath = req.file
-      ? getFileUrl("products", req.file.filename)
+      ? (process.env.NODE_ENV === 'production'
+          ? req.file.path
+          : getFileUrl("products", req.file.filename))
       : null;
 
     const product = await Product.create({
@@ -172,7 +175,7 @@ const updateProduct = async (req, res, next) => {
     }
 
     // ── Build update object (only update provided fields) ─────────────────
-    const { name, category, description, available } = req.body;
+    const { name, category, description, available, imageUrl } = req.body;
     if (name !== undefined) product.name = name;
     if (category !== undefined) product.category = category;
     if (description !== undefined) product.description = description;
@@ -180,11 +183,15 @@ const updateProduct = async (req, res, next) => {
       product.available = available === "true" || available === true;
     }
 
-    // ── Replace image if a new one was uploaded ───────────────────────────
+    // ── Replace image: uploaded file > pasted URL > keep existing ─────────
     if (req.file) {
       const oldImage = product.image;
-      product.image = getFileUrl("products", req.file.filename);
-      deleteImageFile(oldImage); // Remove old image file from disk
+      product.image = process.env.NODE_ENV === 'production'
+        ? req.file.path
+        : getFileUrl("products", req.file.filename);
+      if (process.env.NODE_ENV !== 'production') deleteImageFile(oldImage);
+    } else if (imageUrl && imageUrl.startsWith('http')) {
+      product.image = imageUrl; // Use pasted URL
     }
 
     await product.save();
