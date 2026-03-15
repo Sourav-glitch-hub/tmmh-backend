@@ -46,7 +46,7 @@ const createProduct = async (req, res, next) => {
       });
     }
 
-    const { name, category, description, available } = req.body;
+   
 
    // ✅ FIXED — uses imageUrl if no file uploaded
 const { name, category, description, available, imageUrl } = req.body;
