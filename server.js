@@ -115,7 +115,7 @@ app.use(errorHandler); // Global error handler
 
 const PORT = process.env.PORT || 5000;
 
-const server = app.listen(PORT, () => {
+const server = app.listen(PORT,'0.0.0.0', () => {
   console.log(
     `\n🚀 Server running in ${process.env.NODE_ENV || "development"} mode on port ${PORT}`
   );
