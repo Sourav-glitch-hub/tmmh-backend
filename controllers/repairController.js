@@ -19,10 +19,10 @@ const {
 // ============================================================
 const createRepairRequest = async (req, res, next) => {
   try {
-    // ── Handle optional image upload FIRST (multer populates req.body) ───
+    // ── Handle optional image upload FIRST ───────────────────
     await handleUpload(uploadRepairImage, req, res);
 
-    // ── Validate input fields ─────────────────────────────────────────────
+    // ── Validate input fields ─────────────────────────────────
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({
@@ -41,15 +41,20 @@ const createRepairRequest = async (req, res, next) => {
       problemDescription,
     } = req.body;
 
-    // ── Generate unique repair ID ─────────────────────────────────────────
+    // ── Generate unique repair ID ─────────────────────────────
     const repairId = await generateRepairId();
 
-    // ── Build image path if file was uploaded ─────────────────────────────
-    const imagePath = req.file
-      ? getFileUrl("repairs", req.file.filename)
-      : null;
+    // ── Build image path ──────────────────────────────────────
+    // In production: Cloudinary returns full URL in req.file.path
+    // In development: build local path
+    let imagePath = null;
+    if (req.file) {
+      imagePath = process.env.NODE_ENV === "production"
+        ? req.file.path   // Cloudinary full URL
+        : getFileUrl("repairs", req.file.filename);
+    }
 
-    // ── Create and save the repair request ───────────────────────────────
+    // ── Create and save the repair request ───────────────────
     const repairRequest = await RepairRequest.create({
       repairId,
       customerName,
@@ -60,7 +65,6 @@ const createRepairRequest = async (req, res, next) => {
       problemDescription,
       image: imagePath,
       status: "Received",
-      // If the request comes from an authenticated customer, link them
       customer: req.user?._id || null,
     });
 
@@ -68,13 +72,13 @@ const createRepairRequest = async (req, res, next) => {
       success: true,
       message: "Repair request submitted successfully.",
       data: {
-        repairId: repairRequest.repairId,
+        repairId:    repairRequest.repairId,
         customerName: repairRequest.customerName,
-        deviceBrand: repairRequest.deviceBrand,
-        deviceModel: repairRequest.deviceModel,
-        problemType: repairRequest.problemType,
-        status: repairRequest.status,
-        createdAt: repairRequest.createdAt,
+        deviceBrand:  repairRequest.deviceBrand,
+        deviceModel:  repairRequest.deviceModel,
+        problemType:  repairRequest.problemType,
+        status:       repairRequest.status,
+        createdAt:    repairRequest.createdAt,
       },
     });
   } catch (error) {
@@ -91,12 +95,10 @@ const getRepairStatus = async (req, res, next) => {
   try {
     const { repairId } = req.params;
 
-    // Validate format (must start with R followed by digits)
     if (!/^R\d+$/i.test(repairId)) {
       return res.status(400).json({
         success: false,
-        message:
-          "Invalid repair ID format. Expected format: R1001",
+        message: "Invalid repair ID format. Expected format: R1001",
       });
     }
 
@@ -116,14 +118,14 @@ const getRepairStatus = async (req, res, next) => {
     res.status(200).json({
       success: true,
       data: {
-        repairId: repairRequest.repairId,
+        repairId:     repairRequest.repairId,
         customerName: repairRequest.customerName,
-        deviceBrand: repairRequest.deviceBrand,
-        deviceModel: repairRequest.deviceModel,
-        problemType: repairRequest.problemType,
-        status: repairRequest.status,
-        submittedAt: repairRequest.createdAt,
-        lastUpdated: repairRequest.updatedAt,
+        deviceBrand:  repairRequest.deviceBrand,
+        deviceModel:  repairRequest.deviceModel,
+        problemType:  repairRequest.problemType,
+        status:       repairRequest.status,
+        submittedAt:  repairRequest.createdAt,
+        lastUpdated:  repairRequest.updatedAt,
       },
     });
   } catch (error) {
@@ -133,17 +135,15 @@ const getRepairStatus = async (req, res, next) => {
 
 // ============================================================
 // @desc    Get all repair requests (admin dashboard)
-// @route   GET /api/admin/repairs
+// @route   GET /api/repairs/admin/all
 // @access  Private (admin only)
 // ============================================================
 const getAllRepairs = async (req, res, next) => {
   try {
-    // ── Pagination ────────────────────────────────────────────────────────
-    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const page  = Math.max(1, parseInt(req.query.page)  || 1);
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
-    const skip = (page - 1) * limit;
+    const skip  = (page - 1) * limit;
 
-    // ── Filtering ─────────────────────────────────────────────────────────
     const filter = {};
 
     if (req.query.status) {
@@ -160,21 +160,19 @@ const getAllRepairs = async (req, res, next) => {
       }
     }
 
-    // Search by repairId, customerName, or phoneNumber
     if (req.query.search) {
       const searchRegex = new RegExp(req.query.search, "i");
       filter.$or = [
-        { repairId: searchRegex },
+        { repairId:     searchRegex },
         { customerName: searchRegex },
-        { phoneNumber: searchRegex },
-        { deviceBrand: searchRegex },
+        { phoneNumber:  searchRegex },
+        { deviceBrand:  searchRegex },
       ];
     }
 
-    // ── Query ─────────────────────────────────────────────────────────────
     const [repairs, total] = await Promise.all([
       RepairRequest.find(filter)
-        .sort({ createdAt: -1 }) // Newest first
+        .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
         .lean(),
@@ -187,7 +185,7 @@ const getAllRepairs = async (req, res, next) => {
         total,
         page,
         limit,
-        totalPages: Math.ceil(total / limit),
+        totalPages:  Math.ceil(total / limit),
         hasNextPage: page < Math.ceil(total / limit),
         hasPrevPage: page > 1,
       },
@@ -200,7 +198,7 @@ const getAllRepairs = async (req, res, next) => {
 
 // ============================================================
 // @desc    Get a single repair request by MongoDB _id (admin)
-// @route   GET /api/admin/repairs/:id
+// @route   GET /api/repairs/admin/:id
 // @access  Private (admin only)
 // ============================================================
 const getRepairById = async (req, res, next) => {
@@ -222,7 +220,7 @@ const getRepairById = async (req, res, next) => {
 
 // ============================================================
 // @desc    Update repair status (admin)
-// @route   PATCH /api/admin/repairs/:id/status
+// @route   PATCH /api/repairs/admin/:id/status
 // @access  Private (admin only)
 // ============================================================
 const updateRepairStatus = async (req, res, next) => {
@@ -237,8 +235,6 @@ const updateRepairStatus = async (req, res, next) => {
     }
 
     const { status, adminNotes } = req.body;
-
-    // ── Find and update the request ───────────────────────────────────────
     const repair = await RepairRequest.findById(req.params.id);
 
     if (!repair) {
@@ -249,23 +245,19 @@ const updateRepairStatus = async (req, res, next) => {
     }
 
     const previousStatus = repair.status;
-
-    // Apply updates
     repair.status = status;
-    if (adminNotes !== undefined) {
-      repair.adminNotes = adminNotes;
-    }
+    if (adminNotes !== undefined) repair.adminNotes = adminNotes;
 
-    await repair.save(); // Triggers updatedAt via timestamps
+    await repair.save();
 
     res.status(200).json({
       success: true,
       message: `Status updated from '${previousStatus}' to '${status}'.`,
       data: {
-        repairId: repair.repairId,
+        repairId:       repair.repairId,
         previousStatus,
-        currentStatus: repair.status,
-        updatedAt: repair.updatedAt,
+        currentStatus:  repair.status,
+        updatedAt:      repair.updatedAt,
       },
     });
   } catch (error) {
@@ -275,7 +267,7 @@ const updateRepairStatus = async (req, res, next) => {
 
 // ============================================================
 // @desc    Delete a repair request (admin)
-// @route   DELETE /api/admin/repairs/:id
+// @route   DELETE /api/repairs/admin/:id
 // @access  Private (admin only)
 // ============================================================
 const deleteRepair = async (req, res, next) => {
@@ -300,21 +292,15 @@ const deleteRepair = async (req, res, next) => {
 
 // ============================================================
 // @desc    Get dashboard stats (admin)
-// @route   GET /api/admin/repairs/stats
+// @route   GET /api/repairs/admin/stats
 // @access  Private (admin only)
 // ============================================================
 const getRepairStats = async (req, res, next) => {
   try {
     const stats = await RepairRequest.aggregate([
-      {
-        $group: {
-          _id: "$status",
-          count: { $sum: 1 },
-        },
-      },
+      { $group: { _id: "$status", count: { $sum: 1 } } },
     ]);
 
-    // Convert array to readable object: { Received: 5, Repairing: 3, ... }
     const statusCounts = stats.reduce((acc, curr) => {
       acc[curr._id] = curr.count;
       return acc;
@@ -322,7 +308,6 @@ const getRepairStats = async (req, res, next) => {
 
     const total = await RepairRequest.countDocuments();
 
-    // Most reported problem types
     const problemStats = await RepairRequest.aggregate([
       { $group: { _id: "$problemType", count: { $sum: 1 } } },
       { $sort: { count: -1 } },
@@ -333,13 +318,13 @@ const getRepairStats = async (req, res, next) => {
       data: {
         total,
         byStatus: {
-          Received: statusCounts["Received"] || 0,
-          Checking: statusCounts["Checking"] || 0,
+          Received:  statusCounts["Received"]  || 0,
+          Checking:  statusCounts["Checking"]  || 0,
           Repairing: statusCounts["Repairing"] || 0,
           Completed: statusCounts["Completed"] || 0,
         },
         byProblemType: problemStats.map((p) => ({
-          type: p._id,
+          type:  p._id,
           count: p.count,
         })),
       },
