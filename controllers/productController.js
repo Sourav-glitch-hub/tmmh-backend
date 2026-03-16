@@ -4,25 +4,12 @@
 // ============================================================
 
 const { validationResult } = require("express-validator");
-const fs = require("fs");
-const path = require("path");
 const Product = require("../models/Product");
 const {
   uploadProductImage,
   handleUpload,
   getFileUrl,
 } = require("../utils/uploadConfig");
-
-// ─── Helper: Delete a stored image file ─────────────────────────────────────
-const deleteImageFile = (imagePath) => {
-  if (!imagePath) return;
-  const fullPath = path.join(__dirname, "../", imagePath);
-  if (fs.existsSync(fullPath)) {
-    fs.unlink(fullPath, (err) => {
-      if (err) console.error("⚠️ Failed to delete image:", err.message);
-    });
-  }
-};
 
 // ============================================================
 // @desc    Add a new product to the catalog
@@ -31,14 +18,10 @@ const deleteImageFile = (imagePath) => {
 // ============================================================
 const createProduct = async (req, res, next) => {
   try {
-    // ── Handle image upload first ─────────────────────────────────────────
     await handleUpload(uploadProductImage, req, res);
 
-    // ── Validate fields ───────────────────────────────────────────────────
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      // Clean up uploaded file if validation fails
-      if (req.file) deleteImageFile(getFileUrl("products", req.file.filename));
       return res.status(400).json({
         success: false,
         message: "Validation failed",
@@ -46,16 +29,12 @@ const createProduct = async (req, res, next) => {
       });
     }
 
-   
+    const { name, category, description, available, imageUrl } = req.body;
 
-   // ✅ FIXED — uses imageUrl if no file uploaded
-const { name, category, description, available, imageUrl } = req.body;
-
-const imagePath = req.file
-  ? (process.env.NODE_ENV === 'production'
-      ? req.file.path
-      : getFileUrl("products", req.file.filename))
-  : (imageUrl && imageUrl.startsWith('http') ? imageUrl : null);
+    // uploaded file → Cloudinary, else use pasted URL
+    const imagePath = req.file
+      ? await getFileUrl("products", req)
+      : (imageUrl && imageUrl.startsWith("http") ? imageUrl : null);
 
     const product = await Product.create({
       name,
@@ -84,12 +63,10 @@ const getAllProducts = async (req, res, next) => {
   try {
     const filter = {};
 
-    // Filter by availability (customers see only available items by default)
     if (req.query.available !== undefined) {
       filter.available = req.query.available === "true";
     }
 
-    // Filter by category
     if (req.query.category) {
       const validCategories = Product.schema.path("category").enumValues;
       if (validCategories.includes(req.query.category)) {
@@ -97,16 +74,14 @@ const getAllProducts = async (req, res, next) => {
       }
     }
 
-    // Search by name
     if (req.query.search) {
       filter.name = new RegExp(req.query.search, "i");
     }
 
     const products = await Product.find(filter)
-      .sort({ category: 1, name: 1 }) // Sort by category, then name
+      .sort({ category: 1, name: 1 })
       .lean();
 
-    // Group by category for a more useful catalog response
     const grouped = products.reduce((acc, product) => {
       if (!acc[product.category]) acc[product.category] = [];
       acc[product.category].push(product);
@@ -134,10 +109,7 @@ const getProductById = async (req, res, next) => {
     const product = await Product.findById(req.params.id);
 
     if (!product) {
-      return res.status(404).json({
-        success: false,
-        message: "Product not found.",
-      });
+      return res.status(404).json({ success: false, message: "Product not found." });
     }
 
     res.status(200).json({ success: true, data: product });
@@ -153,13 +125,10 @@ const getProductById = async (req, res, next) => {
 // ============================================================
 const updateProduct = async (req, res, next) => {
   try {
-    // ── Handle optional new image upload ──────────────────────────────────
     await handleUpload(uploadProductImage, req, res);
 
-    // ── Validate fields ───────────────────────────────────────────────────
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      if (req.file) deleteImageFile(getFileUrl("products", req.file.filename));
       return res.status(400).json({
         success: false,
         message: "Validation failed",
@@ -169,31 +138,22 @@ const updateProduct = async (req, res, next) => {
 
     const product = await Product.findById(req.params.id);
     if (!product) {
-      if (req.file) deleteImageFile(getFileUrl("products", req.file.filename));
-      return res.status(404).json({
-        success: false,
-        message: "Product not found.",
-      });
+      return res.status(404).json({ success: false, message: "Product not found." });
     }
 
-    // ── Build update object (only update provided fields) ─────────────────
     const { name, category, description, available, imageUrl } = req.body;
-    if (name !== undefined) product.name = name;
-    if (category !== undefined) product.category = category;
+    if (name !== undefined)        product.name        = name;
+    if (category !== undefined)    product.category    = category;
     if (description !== undefined) product.description = description;
     if (available !== undefined) {
       product.available = available === "true" || available === true;
     }
 
-    // ── Replace image: uploaded file > pasted URL > keep existing ─────────
+    // uploaded file → Cloudinary, else pasted URL, else keep existing
     if (req.file) {
-      const oldImage = product.image;
-      product.image = process.env.NODE_ENV === 'production'
-        ? req.file.path
-        : getFileUrl("products", req.file.filename);
-      if (process.env.NODE_ENV !== 'production') deleteImageFile(oldImage);
-    } else if (imageUrl && imageUrl.startsWith('http')) {
-      product.image = imageUrl; // Use pasted URL
+      product.image = await getFileUrl("products", req);
+    } else if (imageUrl && imageUrl.startsWith("http")) {
+      product.image = imageUrl;
     }
 
     await product.save();
@@ -218,14 +178,8 @@ const deleteProduct = async (req, res, next) => {
     const product = await Product.findById(req.params.id);
 
     if (!product) {
-      return res.status(404).json({
-        success: false,
-        message: "Product not found.",
-      });
+      return res.status(404).json({ success: false, message: "Product not found." });
     }
-
-    // Remove associated image from disk
-    deleteImageFile(product.image);
 
     await product.deleteOne();
 
@@ -248,10 +202,7 @@ const toggleAvailability = async (req, res, next) => {
     const product = await Product.findById(req.params.id);
 
     if (!product) {
-      return res.status(404).json({
-        success: false,
-        message: "Product not found.",
-      });
+      return res.status(404).json({ success: false, message: "Product not found." });
     }
 
     product.available = !product.available;
